@@ -171,18 +171,24 @@ func dedup(in chan InfluxRowUpdate, out chan InfluxRowUpdate) {
 }
 
 func isSubtleChange(a InfluxRowUpdate, b InfluxRowUpdate) bool {
-	if len(a.fields) != len(b.fields) { return false }
+	if len(a.fields) != len(b.fields) {
+		return false
+	}
 	for k, aValue := range a.fields {
 		bValue, ok := b.fields[k]
-		if !ok { return false }
+		if !ok {
+			return false
+		}
 		if k == "battery_range" || k == "est_battery_range" || k == "ideal_battery_range" {
 			aFloat, _ := aValue.(float64)
 			bFloat, _ := bValue.(float64)
-			if math.Abs(aFloat - bFloat) > 0.5 {
+			if math.Abs(aFloat-bFloat) > 0.5 {
 				return false
 			}
 		}
-		if aValue != bValue { return false }
+		if aValue != bValue {
+			return false
+		}
 	}
 	return true
 }
