@@ -70,7 +70,7 @@ var (
 	stateTracker StateTracker
 )
 
-func create_client() *tesla.Client {
+func newClient() *tesla.Client {
 	client, err := tesla.NewClient(&tesla.Auth{
 		ClientID:     os.Getenv("TESLA_CLIENT_ID"),
 		ClientSecret: os.Getenv("TESLA_CLIENT_SECRET"),
@@ -83,7 +83,7 @@ func create_client() *tesla.Client {
 	return client
 }
 
-func create_influx_conn() influxdb.Client {
+func newInfluxConn() influxdb.Client {
 	client, err := influxdb.NewHTTPClient(influxdb.HTTPConfig{
 		Addr:     os.Getenv("INFLUXDB_HOST"),
 		Username: os.Getenv("INFLUXDB_USER"),
@@ -95,7 +95,7 @@ func create_influx_conn() influxdb.Client {
 	return client
 }
 
-func refresh_vehicle() tesla.Vehicles {
+func refreshVehicle() tesla.Vehicles {
 	vehicles, err := teslaClient.Vehicles()
 	if err != nil {
 		log.Print(err)
@@ -110,7 +110,7 @@ func pollState(stateChannel chan *tesla.Vehicle) {
 	for {
 		log.Printf("Wait for %d seconds for state %s", interval, stateTracker.lastState)
 		time.Sleep(time.Duration(interval) * time.Second)
-		vehicles := refresh_vehicle()
+		vehicles := refreshVehicle()
 		if vehicles != nil {
 			vehicle := vehicles[0].Vehicle
 			stateChannel <- vehicle
@@ -172,17 +172,17 @@ func dedup(in chan InfluxRowUpdate, out chan InfluxRowUpdate) {
 
 func isSubtleChange(a InfluxRowUpdate, b InfluxRowUpdate) bool {
 	if len(a.fields) != len(b.fields) { return false }
-	for k, v_a := range a.fields {
-		v_b, ok := b.fields[k]
+	for k, aValue := range a.fields {
+		bValue, ok := b.fields[k]
 		if !ok { return false }
 		if k == "battery_range" || k == "est_battery_range" || k == "ideal_battery_range" {
-			float_a, _ := v_a.(float64)
-			float_b, _ := v_b.(float64)
-			if math.Abs(float_a-float_b) > 0.5 {
+			aFloat, _ := aValue.(float64)
+			bFloat, _ := bValue.(float64)
+			if math.Abs(aFloat - bFloat) > 0.5 {
 				return false
 			}
 		}
-		if v_a != v_b { return false }
+		if aValue != bValue { return false }
 	}
 	return true
 }
@@ -194,22 +194,22 @@ func isSubtleChange(a InfluxRowUpdate, b InfluxRowUpdate) bool {
 // Otherwise, if there are new changes, reduce the interval by half
 // Otherwise, double the interval until 2048 sec
 func updateInterval(v *tesla.Vehicle, interval int) int {
-	new_state := v.State
-	old_state := stateTracker.update(v)
+	newState := v.State
+	oldState := stateTracker.update(v)
 	if val, ok := INTERVAL[stateTracker.lastState]; ok {
 		return val
 	}
-	if new_state == old_state {
+	if newState == oldState {
 		if interval >= 2048 {
 			return 2048
 		}
 		return interval * 2
 	}
 	// a state change just happened
-	if new_state == "online" {
+	if newState == "online" {
 		return 1
 	}
-	log.Printf("Unhandled state change from %s to %s", old_state, new_state)
+	log.Printf("Unhandled state change from %s to %s", oldState, newState)
 	return interval / 2
 }
 
@@ -264,8 +264,8 @@ func influxDbWrite(in chan InfluxRowUpdate, measurement string) {
 }
 
 func main() {
-	teslaClient = create_client()
-	dbClient = create_influx_conn()
+	teslaClient = newClient()
+	dbClient = newInfluxConn()
 	channels := make(map[string]chan InfluxRowUpdate)
 	for _, v := range []string{"vehicle_state", "charge_state", "drive_state", "climate_state"} {
 		channels[v] = make(chan InfluxRowUpdate)
