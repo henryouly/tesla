@@ -18,6 +18,7 @@ const (
 var (
 	FIELDS_BLACKLIST = []string{"timestamp", "gps_as_of", "left_temp_direction", "right_temp_direction", "charge_port_latch"}
 	INTERVAL         = map[string]int{"driving": 1, "charging_fast": 2, "charging": 16, "asleep": 64}
+	batteryRange     = map[string]float64{}
 )
 
 type InfluxRowUpdate struct {
@@ -163,34 +164,36 @@ func dedup(in chan InfluxRowUpdate, out chan InfluxRowUpdate) {
 	var last InfluxRowUpdate
 	for {
 		update := <-in
-		if !isSubtleChange(last, update) {
-			out <- update
+		diff := changeDiff(last, update)
+		if len(diff.fields) > 0 {
+			out <- diff
 			last = update
 		}
 	}
 }
 
-func isSubtleChange(a InfluxRowUpdate, b InfluxRowUpdate) bool {
-	if len(a.fields) != len(b.fields) {
-		return false
-	}
-	for k, aValue := range a.fields {
-		bValue, ok := b.fields[k]
-		if !ok {
-			return false
+func changeDiff(last InfluxRowUpdate, update InfluxRowUpdate) InfluxRowUpdate {
+	ret := InfluxRowUpdate{fields: make(map[string]interface{})}
+	for k, newValue := range update.fields {
+		oldValue, ok := last.fields[k]
+		if k == "latitude" || k == "longitude" || !ok {
+			ret.fields[k] = update.fields[k]
+			continue
 		}
 		if k == "battery_range" || k == "est_battery_range" || k == "ideal_battery_range" {
-			aFloat, _ := aValue.(float64)
-			bFloat, _ := bValue.(float64)
-			if math.Abs(aFloat-bFloat) > 0.5 {
-				return false
+			oldFloat, ok := batteryRange[k]
+			newFloat, _ := newValue.(float64)
+			if !ok || math.Abs(newFloat-oldFloat) > 0.5 {
+				ret.fields[k] = update.fields[k]
+				batteryRange[k] = newFloat
 			}
+			continue
 		}
-		if aValue != bValue {
-			return false
+		if oldValue != newValue {
+			ret.fields[k] = update.fields[k]
 		}
 	}
-	return true
+	return ret
 }
 
 // Return the new interval based on some exponential delay
