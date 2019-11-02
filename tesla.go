@@ -193,6 +193,7 @@ func changeDiff(last InfluxRowUpdate, update InfluxRowUpdate) InfluxRowUpdate {
 			ret.fields[k] = update.fields[k]
 		}
 	}
+	ret.tags = update.tags
 	return ret
 }
 
